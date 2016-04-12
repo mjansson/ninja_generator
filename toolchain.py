@@ -25,7 +25,7 @@ def make_toolchain(host, target, toolchain):
   if toolchain is None:
     if target.is_raspberrypi():
       toolchain = 'gcc'
-    elif host.is_windows():
+    elif host.is_windows() and target.is_windows():
       toolchain = 'msvc'
     else:
       toolchain = 'clang'
@@ -73,6 +73,11 @@ class Toolchain(object):
       self.binprefix = ''
       self.binext = ''
 
+    if host.is_windows():
+      self.exe_suffix = '.exe'
+    else:
+      self.exe_suffix = ''
+
     #Paths
     self.buildpath = os.path.join('build', 'ninja', target.platform)
     self.libpath = os.path.join('lib', target.platform)
@@ -116,11 +121,11 @@ class Toolchain(object):
         self.archs = ['x86']
       else:
         self.archs = [localarch]
-    elif target.is_macosx():
+    elif self.target.is_macosx():
       self.archs = ['x86-64']
-    elif target.is_ios():
+    elif self.target.is_ios():
       self.archs = ['arm7', 'arm64']
-    elif target.is_raspberrypi():
+    elif self.target.is_raspberrypi():
       self.archs = ['arm6']
     elif self.target.is_android():
       self.archs = ['arm7', 'arm64', 'mips', 'mips64', 'x86', 'x86-64']
@@ -862,18 +867,6 @@ class Toolchain(object):
     self.buildpath = os.path.join( 'build', 'ninja', target.platform )
     self.libpath = os.path.join( 'lib', target.platform )
     self.binpath = os.path.join( 'bin', target.platform )
-
-  def make_toolchain( self, toolchain ):
-    if toolchain is None:
-      if target.is_android() or target.is_raspberrypi():
-        toolchain = 'gcc'
-      elif host.is_windows():
-        toolchain = 'msvc'
-      else:
-        toolchain = 'clang'
-
-    toolchainmodule = __import__(toolchain, globals(), locals(), [], -1)
-    return toolchainmodule.create( toolchain )
 
   def read_prefs( self, filename ):
     if not os.path.isfile( filename ):
