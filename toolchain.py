@@ -11,6 +11,7 @@ import string
 import json
 import zlib
 import version
+import android
 
 def supported_toolchains():
   return ['msvc', 'gcc', 'clang', 'intel']
@@ -73,11 +74,6 @@ class Toolchain(object):
       self.binprefix = ''
       self.binext = ''
 
-    if host.is_windows():
-      self.exe_suffix = '.exe'
-    else:
-      self.exe_suffix = ''
-
     #Paths
     self.buildpath = os.path.join('build', 'ninja', target.platform)
     self.libpath = os.path.join('lib', target.platform)
@@ -94,6 +90,10 @@ class Toolchain(object):
       self.cdcmd = lambda p: 'cd ' + p
       self.mkdircmd = lambda p: 'mkdir -p ' + p
       self.copycmd = lambda p, q: 'cp -f ' + p + ' ' + q
+
+    #Target functionality
+    if target.is_android():
+      self.android = android.make_target(self, host)
 
     #Builders
     self.builders = {}
@@ -128,7 +128,7 @@ class Toolchain(object):
     elif self.target.is_raspberrypi():
       self.archs = ['arm6']
     elif self.target.is_android():
-      self.archs = ['arm7', 'arm64', 'mips', 'mips64', 'x86', 'x86-64']
+      self.archs = ['arm7', 'arm64', 'x86', 'x86-64'] #'mips', 'mips64'
     elif self.target.is_tizen():
       self.archs = ['x86', 'arm7']
     elif self.target.is_pnacl():
@@ -141,6 +141,14 @@ class Toolchain(object):
 
   def initialize_default_configs(self):
     self.configs = ['debug', 'release', 'profile', 'deploy']
+
+  def initialize_toolchain(self):
+    if self.target.is_android():
+      self.android.initialize_toolchain()
+
+  def build_toolchain(self):
+    if self.target.is_android():
+      self.android.build_toolchain()
 
   def parse_default_variables(self, variables):
     if not variables:
@@ -178,6 +186,8 @@ class Toolchain(object):
       self.support_lua = get_boolean_flag(prefs['support_lua'])
     if 'python' in prefs:
       self.python = prefs['python']
+    if self.target.is_android():
+      self.android.parse_prefs(prefs)
 
   def archs(self):
     return self.archs
@@ -195,11 +205,21 @@ class Toolchain(object):
     writer.variable('buildpath', self.buildpath)
     writer.variable('target', self.target.platform)
     writer.variable('config', '')
+    if self.target.is_android():
+      self.android.write_variables(writer)
 
   def write_rules(self, writer):
     writer.pool('serial_pool', 1)
     writer.rule('copy', command = self.copycmd('$in', '$out'), description = 'COPY $in -> $out')
     writer.rule('mkdir', command = self.mkdircmd('$out'), description = 'MKDIR $out')
+    if self.target.is_android():
+      self.android.write_rules(writer)
+
+  def cdcmd(self):
+    return self.cdcmd
+
+  def mkdircmd(self):
+    return self.mkdircmd
 
   def mkdir(self, writer, path, implicit = None, order_only = None):
     if path in self.paths_created:
@@ -227,9 +247,10 @@ class Toolchain(object):
           remainpath, subdir = os.path.split(remainpath)
         if remainpath != '':
           break
-      archdir = self.mkdir(writer, archpath, implicit = rootdir)
-      libpath = os.path.join(archpath, targetfile)
-      output += self.copy(writer, file, libpath, order_only = archdir)
+      targetpath = os.path.join(archpath, targetfile)
+      if os.path.normpath(file) != os.path.normpath(targetpath):
+        archdir = self.mkdir(writer, archpath, implicit = rootdir)
+        output += self.copy(writer, file, targetpath, order_only = archdir)
     return output
 
   def path_escape(self, path):
@@ -297,35 +318,61 @@ class Toolchain(object):
     writer.newline()
     return built
 
-  def lib(self, writer, module, sources, basepath, configs, includepaths):
+  def lib(self, writer, module, sources, basepath, configs, includepaths, outpath = None):
     built = {}
     if basepath == None:
       basepath = ''
     if configs is None:
       configs = list(self.configs)
     libfile = self.libprefix + module + self.staticlibext
-    return self.build_sources(writer, 'lib', 'multilib', module, sources, libfile, basepath, self.libpath, configs, includepaths, None, None)
+    if outpath is None:
+      outpath = self.libpath
+    return self.build_sources(writer, 'lib', 'multilib', module, sources, libfile, basepath, outpath, configs, includepaths, None, None)
 
-  def sharedlib(self, writer, module, sources, basepath, configs, includepaths, implicit_deps, libs, frameworks):
+  def sharedlib(self, writer, module, sources, basepath, configs, includepaths, implicit_deps, libs, frameworks, outpath = None):
     built = {}
     if basepath == None:
       basepath = ''
     if configs is None:
       configs = list(self.configs)
     libfile = self.libprefix + module + self.dynamiclibext
-    return self.build_sources(writer, 'sharedlib', 'multisharedlib', module, sources, libfile, basepath, self.binpath, configs, includepaths, libs, implicit_deps)
+    if outpath is None:
+      outpath = self.binpath
+    return self.build_sources(writer, 'sharedlib', 'multisharedlib', module, sources, libfile, basepath, outpath, configs, includepaths, libs, implicit_deps)
 
-  def bin(self, writer, module, sources, binname, basepath, configs, includepaths, implicit_deps, libs, frameworks):
+  def bin(self, writer, module, sources, binname, basepath, configs, includepaths, implicit_deps, libs, frameworks, outpath = None):
     built = {}
     if basepath == None:
       basepath = ''
     if configs is None:
       configs = list(self.configs)
     binfile = self.binprefix + binname + self.binext
-    return self.build_sources(writer, 'bin', 'multibin', module, sources, binfile, basepath, self.binpath, configs, includepaths, libs, implicit_deps)
+    if outpath is None:
+      outpath = self.binpath
+    return self.build_sources(writer, 'bin', 'multibin', module, sources, binfile, basepath, outpath, configs, includepaths, libs, implicit_deps)
 
   def app(self, writer, module, sources, binname, basepath, configs, includepaths, implicit_deps, libs, frameworks, resources):
-    pass
+    builtbin = []
+    # Filter out platforms that do not have app concept
+    if not (self.target.is_macosx() or self.target.is_ios() or self.target.is_android() or self.target.is_tizen()):
+      return builtbin
+    if basepath is None:
+      basepath = ''
+    if binname is None:
+      binname = module
+    if configs is None:
+      configs = list(self.configs)
+    for config in configs:
+      archbins = self.bin(writer, module, sources, binname, basepath, [config], includepaths, implicit_deps, libs, frameworks, outpath = '$buildpath')
+      #if self.target.is_macosx() or self.target.is_ios():
+      #  binpath = os.path.join( self.binpath, config, binname + '.app' )
+      #  builtbin += self.build_app( writer, config, basepath, module, binpath = binpath, binname = binname, unibinary = archbins[config], resources = resources, codesign = codesign )
+      if self.target.is_android():
+        javasources = [name for name in sources if name.endswith('.java')]
+        builtbin += self.android.apk(self, writer, module, archbins, javasources, self.binpath, binname, basepath, config, None, resources)
+      #elif self.target.is_tizen():
+      #  builtbin += self.build_tpk( writer, config, basepath, module, binname = binname, archbins = archbins, resources = resources )
+    return builtbin
 
 """
 class Toolchain(object):

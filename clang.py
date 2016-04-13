@@ -42,7 +42,7 @@ class ClangToolchain(toolchain.Toolchain):
     self.initialize_archs(archs)
     self.initialize_configs(configs)
     self.initialize_project(project)
-    self.initialize_target_toolchain(self.target)
+    self.initialize_toolchain()
 
     self.parse_default_variables(variables)
     self.read_build_prefs()
@@ -60,7 +60,7 @@ class ClangToolchain(toolchain.Toolchain):
     self.builders['multibin'] = self.builder_multicopy
 
     #Setup target platform
-    self.build_target_toolchain(self.target)
+    self.build_toolchain()
 
   def name(self):
     return 'clang'
@@ -71,23 +71,9 @@ class ClangToolchain(toolchain.Toolchain):
       clangprefs = prefs['clang']
       if 'toolchain' in clangprefs:
         self.toolchain = clangprefs['toolchain']
-    if self.target.is_android():
-      self.parse_android_prefs(prefs)
-
-  def parse_android_prefs(self, prefs):
-    if 'android' in prefs:
-      androidprefs = prefs['android']
-      if 'ndkpath' in androidprefs:
-        self.ndkpath = androidprefs['ndkpath']
-      if 'sdkpath' in androidprefs:
-        self.sdkpath = androidprefs['sdkpath']
-      if 'platformversion' in androidprefs:
-        self.platformversion = androidprefs['platformversion']
 
   def write_variables(self, writer):
     super(ClangToolchain, self).write_variables(writer)
-    if self.target.is_android():
-      self.write_android_variables(writer)
     writer.variable('toolchain', self.toolchain)
     writer.variable('cc', self.ccompiler)
     writer.variable('ar', self.archiver)
@@ -110,11 +96,6 @@ class ClangToolchain(toolchain.Toolchain):
     writer.variable('oslibs', self.make_libs(self.oslibs))
     writer.newline()
 
-  def write_android_variables(self, writer):
-    writer.variable('ndk', self.ndkpath)
-    writer.variable('sdk', self.sdkpath)
-    writer.variable('sysroot', self.sysroot)
-
   def write_rules(self, writer):
     super(ClangToolchain, self).write_rules(writer)
     writer.rule('cc', command = self.cccmd, depfile = self.ccdepfile, deps = self.ccdeps, description = 'CC $in')
@@ -123,19 +104,11 @@ class ClangToolchain(toolchain.Toolchain):
     writer.rule('so', command = self.linkcmd, description = 'SO $out')
     writer.newline()
 
-  def initialize_target_toolchain(self, target):
-    if target.is_android():
-      self.initialize_android_toolchain()
-
-  def initialize_android_toolchain(self):
-    self.android_sdkpath = os.getenv('NDK_HOME', '')
-    self.sdkpath = os.getenv('ANDROID_HOME', '')
-    self.platformversion = '21'
-
-  def build_target_toolchain(self, target):
-    if target.is_windows():
+  def build_toolchain(self):
+    super(ClangToolchain, self).build_toolchain()
+    if self.target.is_windows():
       self.build_windows_toolchain()
-    elif target.is_android():
+    elif self.target.is_android():
       self.build_android_toolchain()
     if self.toolchain != '' and not self.toolchain.endswith('/') and not self.toolchain.endswith('\\'):
       self.toolchain += os.sep
@@ -145,7 +118,6 @@ class ClangToolchain(toolchain.Toolchain):
     self.oslibs = ['kernel32', 'user32', 'shell32', 'advapi32']
 
   def build_android_toolchain(self):
-    self.sysroot = ''
     self.archiver = 'ar'
 
     self.cccmd += ' --sysroot=$sysroot'
@@ -160,79 +132,7 @@ class ClangToolchain(toolchain.Toolchain):
 
     self.oslibs += ['log']
 
-    self.archname = dict()
-    self.archname['x86'] = 'x86'
-    self.archname['x86-64'] = 'x86_64'
-    self.archname['arm6'] = 'arm'
-    self.archname['arm7'] = 'arm'
-    self.archname['arm64'] = 'arm64'
-    self.archname['mips'] = 'mips'
-    self.archname['mips64'] = 'mips64'
-
-    self.gcc_toolchainversion = '4.9'
-
-    self.gcc_toolchainname = dict()
-    self.gcc_toolchainname['x86'] = 'x86-' + self.gcc_toolchainversion
-    self.gcc_toolchainname['x86-64'] = 'x86_64-' + self.gcc_toolchainversion
-    self.gcc_toolchainname['arm6'] = 'arm-linux-androideabi-' + self.gcc_toolchainversion
-    self.gcc_toolchainname['arm7'] = 'arm-linux-androideabi-' + self.gcc_toolchainversion
-    self.gcc_toolchainname['arm64'] = 'aarch64-linux-android-' + self.gcc_toolchainversion
-    self.gcc_toolchainname['mips'] = 'mipsel-linux-android-' + self.gcc_toolchainversion
-    self.gcc_toolchainname['mips64'] = 'mips64el-linux-android-' + self.gcc_toolchainversion
-
-    self.gcc_toolchainprefix = dict()
-    self.gcc_toolchainprefix['x86'] = 'i686-linux-android-'
-    self.gcc_toolchainprefix['x86-64'] = 'x86_64-linux-android-'
-    self.gcc_toolchainprefix['arm6'] = 'arm-linux-androideabi-'
-    self.gcc_toolchainprefix['arm7'] = 'arm-linux-androideabi-'
-    self.gcc_toolchainprefix['arm64'] = 'aarch64-linux-android-'
-    self.gcc_toolchainprefix['mips'] = 'mipsel-linux-android-'
-    self.gcc_toolchainprefix['mips64'] = 'mips64el-linux-android-'
-
-    if self.host.is_windows():
-      if os.getenv('PROCESSOR_ARCHITECTURE', 'AMD64').find('64') != -1:
-        self.hostarchname = 'windows-x86_64'
-      else:
-        self.hostarchname = 'windows-x86'
-    elif self.host.is_linux():
-        localarch = subprocess.check_output(['uname', '-m']).strip()
-        if localarch == 'x86_64':
-          self.hostarchname = 'linux-x86_64'
-        else:
-          self.hostarchname = 'linux-x86'
-    elif self.host.is_macosx():
-      self.hostarchname = 'darwin-x86_64'
-
-    self.toolchain = os.path.join(self.ndkpath, 'toolchains', 'llvm', 'prebuilt', self.hostarchname, 'bin', '')
-
-    buildtools_path = os.path.join(self.sdkpath, 'build-tools')
-    buildtools_list = [item for item in os.listdir(buildtools_path) if os.path.isdir(os.path.join(buildtools_path, item))]
-    buildtools_list.sort(key = lambda s: map(int, s.split('.')))
-
-    self.buildtools_path = os.path.join(self.sdkpath, 'build-tools', buildtools_list[-1])
-    self.android_jar = os.path.join(self.sdkpath, 'platforms', 'android-' + self.platformversion, 'android.jar')
-
-    self.javac = 'javac'
-    if self.host.is_windows():
-      self.dex = os.path.join(self.buildtools_path, 'dx.bat')
-    else:
-      self.dex = os.path.join(self.buildtools_path, 'dx' + self.exe_suffix)
-    if not os.path.isfile(self.dex):
-      self.dex = os.path.join(self.sdkpath, 'tools', 'dx' + self.exe_suffix)
-    self.aapt = os.path.join(self.buildtools_path, 'aapt' + self.exe_suffix)
-    self.zipalign = os.path.join(self.buildtools_path, 'zipalign' + self.exe_suffix)
-    if not os.path.isfile( self.zipalign ):
-      self.zipalign = os.path.join(self.sdkpath, 'tools', 'zipalign' + self.exe_suffix)
-    self.jarsigner = 'jarsigner'
-
-  def make_android_sysroot_path(self, arch):
-    return os.path.join(self.ndkpath, 'platforms', 'android-' + self.platformversion, 'arch-' + self.archname[arch])
-
-  def make_android_gcc_toolchain_path(self, arch):
-    return os.path.join(self.ndkpath, 'toolchains', self.gcc_toolchainname[arch], 'prebuilt', self.hostarchname)
-
-  def make_android_gcc_bin_path(self, arch):
-    return os.path.join(self.make_android_gcc_toolchain_path(arch), 'bin', self.gcc_toolchainprefix[arch])
+    self.toolchain = os.path.join('$ndk', 'toolchains', 'llvm', 'prebuilt', self.android.hostarchname, 'bin', '')
 
   def make_includepaths(self, includepaths):
     if not includepaths is None:
@@ -251,20 +151,23 @@ class ClangToolchain(toolchain.Toolchain):
     if self.target.is_android():
       if arch == 'x86':
         flags += ['-target', 'i686-none-linux-android']
+        flags += ['-march=i686', '-mtune=intel', '-mssse3', '-mfpmath=sse', '-m32']
       elif arch == 'x86-64':
         flags += ['-target', 'x86_64-none-linux-android']
+        flags += ['-march=x86-64', '-msse4.2', '-mpopcnt', '-m64', '-mtune=intel']
       elif arch == 'arm6':
         flags += ['-target', 'armv5te-none-linux-androideabi']
+        flags += ['-march=armv5te', '-mtune=xscale', '-msoft-float', '-marm']
       elif arch == 'arm7':
         flags += ['-target', 'armv7-none-linux-androideabi']
+        flags += ['-march=armv7-a', '-mhard-float', '-mfpu=vfpv3-d16', '-mfpu=neon', '-D_NDK_MATH_NO_SOFTFP=1', '-marm']
       elif arch == 'arm64':
         flags += ['-target', 'aarch64-none-linux-android']
       elif arch == 'mips':
         flags += ['-target', 'mipsel-none-linux-android']
-        flags += ['-gcc-toolchain', self.make_android_gcc_toolchain_path(arch)]
       elif arch == 'mips64':
         flags += ['-target', 'mips64el-none-linux-android']
-        flags += ['-gcc-toolchain', self.make_android_gcc_toolchain_path(arch)]
+      flags += ['-gcc-toolchain', self.android.make_gcc_toolchain_path(arch)]
     return flags
 
   def make_carchflags(self, arch, targettype):
@@ -298,13 +201,9 @@ class ClangToolchain(toolchain.Toolchain):
   def make_linkarchflags(self, arch, targettype):
     flags = []
     if self.target.is_android():
-      archlibs = []
+      flags += self.make_targetarchflags(arch, targettype)
       if arch == 'arm7':
-        archlibs += ['m_hard']
-      else:
-        archlibs += ['m']
-      archlibs += ['gcc', 'android']
-      flags += self.make_libs(archlibs)
+        flags += ['-Wl,--no-warn-mismatch', '-Wl,--fix-cortex-a8']
     return flags
 
   def make_linkconfigflags(self, config, targettype):
@@ -314,9 +213,17 @@ class ClangToolchain(toolchain.Toolchain):
         flags += ['-Xlinker', '/DLL']
       elif targettype == 'bin':
         flags += ['-Xlinker', '/SUBSYSTEM:CONSOLE']
-    if self.target.is_android():
-      flags += self.make_targetarchflags(arch, targettype)
     return flags
+
+  def make_linkarchlibs(self, arch, targettype):
+    archlibs = []
+    if self.target.is_android():
+      if arch == 'arm7':
+        archlibs += ['m_hard']
+      else:
+        archlibs += ['m']
+      archlibs += ['gcc', 'android']
+    return archlibs
 
   def make_libs(self, libs):
     if libs != None:
@@ -344,7 +251,7 @@ class ClangToolchain(toolchain.Toolchain):
     if cconfigflags != []:
       localvariables += [('cconfigflags', cconfigflags)]
     if self.target.is_android():
-      localvariables += [('sysroot', self.make_android_sysroot_path(arch))]
+      localvariables += [('sysroot', self.android.make_sysroot_path(arch))]
     return localvariables
 
   def ar_variables(self, config, arch, targettype, variables):
@@ -356,7 +263,7 @@ class ClangToolchain(toolchain.Toolchain):
     if arconfigflags != []:
       localvariables += [('arconfigflags', arconfigflags)]
     if self.target.is_android():
-      localvariables += [('toolchain', self.make_android_gcc_bin_path(arch))]
+      localvariables += [('toolchain', self.android.make_gcc_bin_path(arch))]
     return localvariables
 
   def link_variables(self, config, arch, targettype, variables):
@@ -372,6 +279,11 @@ class ClangToolchain(toolchain.Toolchain):
       if libvar != []:
         localvariables += [('libs', libvar)]
     localvariables += [('configlibpaths', self.make_configlibpaths(config, arch))]
+    if self.target.is_android():
+      localvariables += [('sysroot', self.android.make_sysroot_path(arch))]
+    archlibs = self.make_linkarchlibs(arch, targettype)
+    if archlibs != []:
+      localvariables += [('archlibs', self.make_libs(archlibs))]
     return localvariables
 
   def builder_cc(self, writer, config, arch, targettype, infile, outfile, variables):

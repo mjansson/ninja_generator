@@ -40,6 +40,8 @@ class MSVCToolchain(toolchain.Toolchain):
     self.initialize_archs(archs)
     self.initialize_configs(configs)
     self.initialize_project(project)
+    self.initialize_toolchain()
+
     self.parse_default_variables(variables)
     self.read_build_prefs()
 
