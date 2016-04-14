@@ -3,6 +3,7 @@
 """Ninja toolchain abstraction for Android platform"""
 
 import os
+import urlparse
 
 import toolchain
 
@@ -24,7 +25,7 @@ class Android(object):
     self.aaptdeploycmd = toolchain.cdcmd('$apkbuildpath') + ' && $aapt c -S res -C bin/res && $aapt p -f -m -M AndroidManifest.xml -F $apk -I $androidjar -S bin/res -S res -J gen $aaptflags'
     self.aaptaddcmd = toolchain.cdcmd('$apkbuildpath') + ' && $aapt a $apk $apkaddfiles'
     self.zipaligncmd = '$zipalign -f 4 $in $out'
-    self.jarsignercmd = '$jarsigner $timestamp -sigalg SHA1withRSA -digestalg SHA1 -keystore $keystore -storepass $keystorepass -keypass $keypass -signedjar $out $in $keyalias'
+    self.jarsignercmd = '$jarsigner $timestamp -sigalg SHA1withRSA -digestalg SHA1 -keystore $keystore -storepass $keystorepass -keypass $keypass -signedjar $out $in $keyalias $proxy'
     self.zipcmd = '$zip -r -9 $out $in $implicitin'
 
   def initialize_toolchain(self):
@@ -35,6 +36,12 @@ class Android(object):
     self.gcc_toolchainversion = '4.9'
     self.tsacert = ''
     self.tsa = ''
+    self.javasdk = ''
+    self.keystore = ''
+    self.keyalias = ''
+    self.keystorepass = ''
+    self.keypass = ''
+    self.proxy = ''
 
     self.archname = dict()
     self.archname['x86'] = 'x86'
@@ -95,6 +102,10 @@ class Android(object):
     self.android_jar = os.path.join(self.sdkpath, 'platforms', 'android-' + self.platformversion, 'android.jar')
 
     self.javac = 'javac'
+    self.jarsigner = 'jarsigner'
+    if self.javasdk != '':
+      self.javac = os.path.join(self.javasdk, 'bin', self.javac)
+      self.jarsigner = os.path.join(self.javasdk, 'bin', self.jarsigner)
     if self.host.is_windows():
       self.dex = os.path.join(self.buildtools_path, 'dx.bat')
     else:
@@ -105,7 +116,6 @@ class Android(object):
     self.zipalign = os.path.join(self.buildtools_path, 'zipalign' + self.exe_suffix)
     if not os.path.isfile( self.zipalign ):
       self.zipalign = os.path.join(self.sdkpath, 'tools', 'zipalign' + self.exe_suffix)
-    self.jarsigner = 'jarsigner'
 
   def parse_prefs(self, prefs):
     if 'android' in prefs:
@@ -121,7 +131,40 @@ class Android(object):
       if 'tsacert' in androidprefs:
         self.tsacert = androidprefs['tsacert']
       if 'tsa' in androidprefs:
-        self.tsacert = androidprefs['tsa']
+        self.tsa = androidprefs['tsa']
+      if 'javasdk' in androidprefs:
+        self.javasdk = androidprefs['javasdk']
+      if 'keystore' in androidprefs:
+        self.keystore = androidprefs['keystore']
+      if 'keyalias' in androidprefs:
+        self.keyalias = androidprefs['keyalias']
+      if 'keystorepass' in androidprefs:
+        self.keystorepass = androidprefs['keystorepass']
+      if 'keypass' in androidprefs:
+        self.keypass = androidprefs['keypass']
+      if 'proxy' in androidprefs:
+        self.proxy = androidprefs['proxy']
+        if self.proxy != '':
+          defstr = "-J-Dhttp.proxy"
+          url = urlparse.urlparse(self.proxy)
+          if url.scheme == 'https':
+            defstr = "-J-Dhttps.proxy"
+          host = url.netloc
+          port = ''
+          username = ''
+          password = ''
+          if '@' in host:
+            username, host = host.split(':', 1)
+            password, host = host.split('@', 1)
+          if ':' in host:
+            host, port = host.split(':', 1)
+          self.proxy = defstr + "Host=" + host
+          if port != '':
+            self.proxy += " " + defstr + "Port=" + port
+          if username != '':
+            self.proxy += " " + defstr + "User=" + username
+          if password != '':
+            self.proxy += " " + defstr + "Password=" + password
 
   def write_variables(self, writer):
     writer.variable('ndk', self.ndkpath)
@@ -139,11 +182,11 @@ class Android(object):
     writer.variable('jarsigner', self.jarsigner)
     writer.variable('aaptflags', '')
     writer.variable('timestamp', '')
-    #writer.variable('keystore', self.android_keystore)
-    #writer.variable('keyalias', self.android_keyalias)
-    #writer.variable('keystorepass', self.android_keystorepass)
-    #writer.variable('keypass', self.android_keypass)
-    #writer.variable('liblinkname', '')
+    writer.variable('keystore', self.keystore)
+    writer.variable('keyalias', self.keyalias)
+    writer.variable('keystorepass', self.keystorepass)
+    writer.variable('keypass', self.keypass)
+    writer.variable('proxy', self.proxy)
 
   def write_rules(self, writer):
     writer.rule('aapt', command = self.aaptcmd, description = 'AAPT $out')
