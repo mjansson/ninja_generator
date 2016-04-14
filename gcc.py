@@ -33,6 +33,13 @@ class GCCToolchain(toolchain.Toolchain):
     self.mflags = []
     self.arflags = []
     self.linkflags = []
+    self.oslibs = []
+
+    if self.target.is_linux() or self.target.is_bsd() or self.target.is_raspberrypi():
+      self.linkflags += ['-pthread']
+      self.oslibs += ['m']
+    if self.target.is_linux() or self.target.is_raspberrypi():
+      self.oslibs += ['dl']
 
     if self.is_monolithic():
       self.cflags += ['-DBUILD_MONOLITHIC=1']
@@ -40,6 +47,8 @@ class GCCToolchain(toolchain.Toolchain):
     self.initialize_archs(archs)
     self.initialize_configs(configs)
     self.initialize_project(project)
+    self.initialize_toolchain()
+
     self.parse_default_variables(variables)
     self.read_build_prefs()
 
@@ -129,13 +138,13 @@ class GCCToolchain(toolchain.Toolchain):
   def make_cconfigflags(self, config, targettype):
     flags = []
     if config == 'debug':
-      flags += ['-DBUILD_DEBUG=1']
+      flags += ['-DBUILD_DEBUG=1', '-g']
     elif config == 'release':
-      flags += ['-DBUILD_RELEASE=1']
+      flags += ['-DBUILD_RELEASE=1', '-O3', '-g', '-funroll-loops']
     elif config == 'profile':
-      flags += ['-DBUILD_PROFILE=1']
+      flags += ['-DBUILD_PROFILE=1', '-O3', '-g', '-funroll-loops']
     elif config == 'deploy':
-      flags += ['-DBUILD_DEPLOY=1']
+      flags += ['-DBUILD_DEPLOY=1', '-O3', '-g', '-funroll-loops']
     return flags
 
   def make_ararchflags(self, arch, targettype):
