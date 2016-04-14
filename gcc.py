@@ -129,10 +129,19 @@ class GCCToolchain(toolchain.Toolchain):
       return ['-L' + self.path_escape(path) for path in libpaths]
     return []
 
+  def make_targetarchflags(self, arch, targettype):
+    flags = []
+    if arch == 'x86':
+      flags += ['-m32']
+    elif arch == 'x86-64':
+      flags += ['-m64']
+    return flags
+
   def make_carchflags(self, arch, targettype):
     flags = []
     if targettype == 'sharedlib':
       flags += ['-DBUILD_DYNAMIC_LINK=1']
+    flags += self.make_targetarchflags(arch, targettype)
     return flags
 
   def make_cconfigflags(self, config, targettype):
@@ -157,6 +166,7 @@ class GCCToolchain(toolchain.Toolchain):
 
   def make_linkarchflags(self, arch, targettype):
     flags = []
+    flags += self.make_targetarchflags(arch, targettype)
     return flags
 
   def make_linkconfigflags(self, config, targettype):

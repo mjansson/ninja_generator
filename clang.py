@@ -14,8 +14,10 @@ class ClangToolchain(toolchain.Toolchain):
     self.includepaths = includepaths
     self.libpaths = libpaths
     self.ccompiler = 'clang'
-    self.archiver = 'llvm-ar'
+    self.archiver = 'ar'
     self.linker = 'clang'
+    if self.target.is_windows():
+      self.archiver = 'llvm-ar'
 
     #Command definitions
     self.cccmd = '$toolchain$cc -MMD -MT $out -MF $out.d -I. $includepaths $moreincludepaths $cflags $carchflags $cconfigflags -c $in -o $out'
@@ -35,6 +37,12 @@ class ClangToolchain(toolchain.Toolchain):
     self.arflags = []
     self.linkflags = []
     self.oslibs = []
+
+    if self.target.is_linux() or self.target.is_bsd() or self.target.is_raspberrypi():
+      self.linkflags += ['-pthread']
+      self.oslibs += ['m']
+    if self.target.is_linux() or self.target.is_raspberrypi():
+      self.oslibs += ['dl']
 
     if self.is_monolithic():
       self.cflags += ['-DBUILD_MONOLITHIC=1']
@@ -71,6 +79,8 @@ class ClangToolchain(toolchain.Toolchain):
       clangprefs = prefs['clang']
       if 'toolchain' in clangprefs:
         self.toolchain = clangprefs['toolchain']
+      if 'archiver' in clangprefs:
+        self.archiver = clangprefs['archiver']
 
   def write_variables(self, writer):
     super(ClangToolchain, self).write_variables(writer)
@@ -168,14 +178,18 @@ class ClangToolchain(toolchain.Toolchain):
       elif arch == 'mips64':
         flags += ['-target', 'mips64el-none-linux-android']
       flags += ['-gcc-toolchain', self.android.make_gcc_toolchain_path(arch)]
+    else:
+      if arch == 'x86':
+        flags += ['-m32']
+      elif arch == 'x86-64':
+        flags += ['-m64']
     return flags
 
   def make_carchflags(self, arch, targettype):
     flags = []
     if targettype == 'sharedlib':
       flags += ['-DBUILD_DYNAMIC_LINK=1']
-    if self.target.is_android():
-      flags += self.make_targetarchflags(arch, targettype)
+    flags += self.make_targetarchflags(arch, targettype)
     return flags
 
   def make_cconfigflags(self, config, targettype):
@@ -200,8 +214,8 @@ class ClangToolchain(toolchain.Toolchain):
 
   def make_linkarchflags(self, arch, targettype):
     flags = []
+    flags += self.make_targetarchflags(arch, targettype)
     if self.target.is_android():
-      flags += self.make_targetarchflags(arch, targettype)
       if arch == 'arm7':
         flags += ['-Wl,--no-warn-mismatch', '-Wl,--fix-cortex-a8']
     return flags
