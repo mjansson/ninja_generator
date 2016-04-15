@@ -41,6 +41,7 @@ class MSVCToolchain(toolchain.Toolchain):
     self.initialize_configs(configs)
     self.initialize_project(project)
     self.initialize_toolchain()
+    self.initialize_depends(dependlibs)
 
     self.parse_default_variables(variables)
     self.read_build_prefs()
@@ -258,6 +259,9 @@ class MSVCToolchain(toolchain.Toolchain):
       os.path.join(self.libpath, config),
       os.path.join(self.libpath, config, arch)
       ]
+    libpaths += [os.path.join(libpath, self.libpath) for libpath in self.depend_libpaths]
+    libpaths += [os.path.join(libpath, self.libpath, config) for libpath in self.depend_libpaths]
+    libpaths += [os.path.join(libpath, self.libpath, config, arch) for libpath in self.depend_libpaths]
     if self.sdkpath != '':
       if arch == 'x86':
         libpaths += [os.path.join(self.toolchain, 'lib')]

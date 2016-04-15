@@ -79,6 +79,10 @@ class Toolchain(object):
     self.libpath = os.path.join('lib', target.platform)
     self.binpath = os.path.join('bin', target.platform)
 
+    #Dependency paths
+    self.depend_includepaths = []
+    self.depend_libpaths = []
+
     #Command wrappers
     if host.is_windows():
       self.rmcmd = lambda p: 'cmd /C (IF exist ' + p + ' (del /F /Q ' + p + '))'
@@ -145,6 +149,11 @@ class Toolchain(object):
   def initialize_toolchain(self):
     if self.target.is_android():
       self.android.initialize_toolchain()
+
+  def initialize_depends(self, dependlibs):
+    #TODO: Improve localization of dependend libs
+    self.depend_includepaths = [os.path.join('..', lib + '_lib') for lib in dependlibs]
+    self.depend_libpaths = [os.path.join('..', lib + '_lib') for lib in dependlibs]
 
   def build_toolchain(self):
     if self.target.is_android():
@@ -290,7 +299,9 @@ class Toolchain(object):
   def build_sources(self, writer, nodetype, multitype, module, sources, binfile, basepath, outpath, configs, includepaths, libs, implicit_deps):
     decoratedmodule = module + make_pathhash(module, nodetype)
     built = {}
-    sourcevariables = {'includepaths': includepaths}
+    if includepaths is None:
+      includepaths = []
+    sourcevariables = {'includepaths': self.depend_includepaths + list(includepaths)}
     nodevariables = {'libs': libs, 'implicit_deps': implicit_deps}
     for config in configs:
       archnodes = []

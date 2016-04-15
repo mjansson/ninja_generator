@@ -48,6 +48,7 @@ class GCCToolchain(toolchain.Toolchain):
     self.initialize_configs(configs)
     self.initialize_project(project)
     self.initialize_toolchain()
+    self.initialize_depends(dependlibs)
 
     self.parse_default_variables(variables)
     self.read_build_prefs()
@@ -184,6 +185,9 @@ class GCCToolchain(toolchain.Toolchain):
       os.path.join(self.libpath, config),
       os.path.join(self.libpath, config, arch)
       ]
+    libpaths += [os.path.join(libpath, self.libpath) for libpath in self.depend_libpaths]
+    libpaths += [os.path.join(libpath, self.libpath, config) for libpath in self.depend_libpaths]
+    libpaths += [os.path.join(libpath, self.libpath, config, arch) for libpath in self.depend_libpaths]
     return self.make_libpaths(libpaths)
 
   def cc_variables(self, config, arch, targettype, variables):
