@@ -12,6 +12,7 @@ import json
 import zlib
 import version
 import android
+import xcode
 
 def supported_toolchains():
   return ['msvc', 'gcc', 'clang', 'intel']
@@ -97,7 +98,9 @@ class Toolchain(object):
 
     #Target functionality
     if target.is_android():
-      self.android = android.make_target(self, host)
+      self.android = android.make_target(self, host, target)
+    if target.is_macosx() or target.is_ios():
+      self.xcode = xcode.make_target(self, host, target)
 
     #Builders
     self.builders = {}
@@ -147,8 +150,10 @@ class Toolchain(object):
     self.configs = ['debug', 'release', 'profile', 'deploy']
 
   def initialize_toolchain(self):
-    if self.target.is_android():
+    if self.android != None:
       self.android.initialize_toolchain()
+    if self.xcode != None:
+      self.xcode.initialize_toolchain()
 
   def initialize_depends(self, dependlibs):
     #TODO: Improve localization of dependend libs
@@ -156,8 +161,10 @@ class Toolchain(object):
     self.depend_libpaths = [os.path.join('..', lib + '_lib') for lib in dependlibs]
 
   def build_toolchain(self):
-    if self.target.is_android():
+    if self.android != None:
       self.android.build_toolchain()
+    if self.xcode != None:
+      self.xcode.build_toolchain()
 
   def parse_default_variables(self, variables):
     if not variables:
@@ -195,8 +202,10 @@ class Toolchain(object):
       self.support_lua = get_boolean_flag(prefs['support_lua'])
     if 'python' in prefs:
       self.python = prefs['python']
-    if self.target.is_android():
+    if self.android != None:
       self.android.parse_prefs(prefs)
+    if self.xcode != None:
+      self.xcode.parse_prefs(prefs)
 
   def archs(self):
     return self.archs
@@ -214,15 +223,19 @@ class Toolchain(object):
     writer.variable('buildpath', self.buildpath)
     writer.variable('target', self.target.platform)
     writer.variable('config', '')
-    if self.target.is_android():
+    if self.android != None:
       self.android.write_variables(writer)
+    if self.xcode != None:
+      self.xcode.write_variables(writer)
 
   def write_rules(self, writer):
     writer.pool('serial_pool', 1)
     writer.rule('copy', command = self.copycmd('$in', '$out'), description = 'COPY $in -> $out')
     writer.rule('mkdir', command = self.mkdircmd('$out'), description = 'MKDIR $out')
-    if self.target.is_android():
+    if self.android != None:
       self.android.write_rules(writer)
+    if self.xcode != None:
+      self.xcode.write_rules(writer)
 
   def cdcmd(self):
     return self.cdcmd
@@ -375,9 +388,9 @@ class Toolchain(object):
       configs = list(self.configs)
     for config in configs:
       archbins = self.bin(writer, module, sources, binname, basepath, [config], includepaths, implicit_deps, libs, frameworks, outpath = '$buildpath')
-      #if self.target.is_macosx() or self.target.is_ios():
-      #  binpath = os.path.join( self.binpath, config, binname + '.app' )
-      #  builtbin += self.build_app( writer, config, basepath, module, binpath = binpath, binname = binname, unibinary = archbins[config], resources = resources, codesign = codesign )
+      if self.target.is_macosx() or self.target.is_ios():
+        binpath = os.path.join( self.binpath, config, binname + '.app' )
+        builtbin += self.xcode.apk(self, writer, module, archbins, javasources, self.binpath, binname, basepath, config, None, resources, codesign)
       if self.target.is_android():
         javasources = [name for name in sources if name.endswith('.java')]
         builtbin += self.android.apk(self, writer, module, archbins, javasources, self.binpath, binname, basepath, config, None, resources)

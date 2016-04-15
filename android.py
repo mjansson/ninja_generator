@@ -7,11 +7,11 @@ import urlparse
 
 import toolchain
 
-def make_target(toolchain, host):
+def make_target(toolchain, host, target):
   return Android(toolchain, host)
 
 class Android(object):
-  def __init__(self, toolchain, host):
+  def __init__(self, toolchain, host, target):
     self.host = host
 
     if host.is_windows():
