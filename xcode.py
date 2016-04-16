@@ -3,6 +3,7 @@
 """Ninja toolchain abstraction for XCode toolchain"""
 
 import os
+import subprocess
 
 import toolchain
 
@@ -25,49 +26,31 @@ class XCode(object):
     if self.target.is_macosx():
       sdk = 'macosx'
       deploytarget = 'MACOSX_DEPLOYMENT_TARGET=' + self.deploymenttarget
-      self.cflags += [ '-fasm-blocks', '-mmacosx-version-min=' + self.deploymenttarget, '-isysroot', '$sdkpath' ]
-      self.arflags += [ '-static', '-no_warning_for_no_symbols' ]
-      self.linkflags += [ '-isysroot', '$sdkpath' ]
     elif self.target.is_ios():
       sdk = 'iphoneos'
       deploytarget = 'IPHONEOS_DEPLOYMENT_TARGET=' + self.deploymenttarget
-      self.cflags += [ '-fasm-blocks', '-miphoneos-version-min=' + self.deploymenttarget, '-isysroot', '$sdkpath' ]
-      self.arflags += [ '-static', '-no_warning_for_no_symbols' ]
-      self.linkflags += [ '-isysroot', '$sdkpath' ]
 
     platformpath = subprocess.check_output( [ 'xcrun', '--sdk', sdk, '--show-sdk-platform-path' ] ).strip()
     localpath = platformpath + "/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-    self.cc = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'clang' ] ).strip()
-    self.ar = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'libtool' ] ).strip()
-    self.link = deploytarget + " " + self.cc
-    self.lipo = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'lipo' ] ).strip()
     self.plist = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'plutil' ] ).strip()
     self.xcassets = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'actool' ] ).strip()
     self.xib = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'ibtool' ] ).strip()
     self.dsymutil = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'dsymutil' ] ).strip()
 
-    self.mflags += self.cflags + [ '-fobjc-arc', '-fno-objc-exceptions', '-x', 'objective-c' ]
-    self.cflags += [ '-x', 'c' ]
-
-    self.cmcmd = '$cc -MMD -MT $out -MF $out.d $includepaths $moreincludepaths $mflags $carchflags $cconfigflags -c $in -o $out'
-    self.arcmd = self.rmcmd('$out') + ' && $ar $ararchflags $arflags $in -o $out'
-    self.dynlibcmd = self.rmcmd('$out') + ' && $ar $ararchflags $arflags $in -o $out'
-    self.lipocmd = '$lipo -create $in -output $out'
-    self.linkcmd = '$link $libpaths $linkflags $linkarchflags $linkconfigflags $in $libs -o $out'
     self.plistcmd = 'build/ninja/plist.py --exename $exename --prodname $prodname --bundle $bundleidentifier --target $target --deploymenttarget $deploymenttarget --output $outpath $in'
-    if target.is_macosx():
+    if self.target.is_macosx():
       self.xcassetscmd = 'mkdir -p $outpath && $xcassets --output-format human-readable-text --output-partial-info-plist $outplist' \
-                         ' --app-icon AppIcon --launch-image LaunchImage --platform macosx --minimum-deployment-target ' + self.macosx_deploymenttarget + \
+                         ' --app-icon AppIcon --launch-image LaunchImage --platform macosx --minimum-deployment-target ' + self.deploymenttarget + \
                          ' --target-device mac --compress-pngs --compile $outpath $in >/dev/null'
-      self.xibcmd = '$xib --target-device mac --module $module --minimum-deployment-target ' + self.macosx_deploymenttarget + \
+      self.xibcmd = '$xib --target-device mac --module $module --minimum-deployment-target ' + self.deploymenttarget + \
                     ' --output-partial-info-plist $outplist --auto-activate-custom-fonts' \
                     ' --output-format human-readable-text --compile $outpath $in'
-    elif target.is_ios():
+    elif self.target.is_ios():
       self.xcassetscmd = 'mkdir -p $outpath && $xcassets --output-format human-readable-text --output-partial-info-plist $outplist' \
-                         ' --app-icon AppIcon --launch-image LaunchImage --platform iphoneos --minimum-deployment-target ' + self.ios_deploymenttarget + \
+                         ' --app-icon AppIcon --launch-image LaunchImage --platform iphoneos --minimum-deployment-target ' + self.deploymenttarget + \
                          ' --target-device iphone --target-device ipad --compress-pngs --compile $outpath $in >/dev/null'
-      self.xibcmd = '$xib --target-device iphone --target-device ipad --module $module --minimum-deployment-target ' + self.ios_deploymenttarget + \
+      self.xibcmd = '$xib --target-device iphone --target-device ipad --module $module --minimum-deployment-target ' + self.deploymenttarget + \
                     ' --output-partial-info-plist $outplist --auto-activate-custom-fonts' \
                     ' --output-format human-readable-text --compile $outpath $in &> /dev/null '
     self.dsymutilcmd = '$dsymutil $in -o $outpath'

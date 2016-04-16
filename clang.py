@@ -3,6 +3,7 @@
 """Ninja toolchain abstraction for Clang compiler suite"""
 
 import os
+import subprocess
 
 import toolchain
 
@@ -18,6 +19,13 @@ class ClangToolchain(toolchain.Toolchain):
     self.linker = 'clang'
     if self.target.is_windows():
       self.archiver = 'llvm-ar'
+
+    #Default variables
+    self.sysroot = ''
+    if self.target.is_ios():
+      self.deploymenttarget = '6.0'
+    if self.target.is_macosx():
+      self.deploymenttarget = '10.7'
 
     #Command definitions
     self.cccmd = '$toolchain$cc -MMD -MT $out -MF $out.d -I. $includepaths $moreincludepaths $cflags $carchflags $cconfigflags -c $in -o $out'
@@ -82,10 +90,19 @@ class ClangToolchain(toolchain.Toolchain):
         self.toolchain = clangprefs['toolchain']
       if 'archiver' in clangprefs:
         self.archiver = clangprefs['archiver']
+    if self.target.is_ios() and 'ios' in prefs:
+      iosprefs = prefs['ios']
+      if 'deploymenttarget' in iosprefs:
+        self.deploymenttarget = iosprefs['deploymenttarget']
+    if self.target.is_macosx() and 'macosx' in prefs:
+      macosxprefs = prefs['macosx']
+      if 'deploymenttarget' in macosxprefs:
+        self.deploymenttarget = macosxprefs['deploymenttarget']
 
   def write_variables(self, writer):
     super(ClangToolchain, self).write_variables(writer)
     writer.variable('toolchain', self.toolchain)
+    writer.variable('sysroot', self.sysroot)
     writer.variable('cc', self.ccompiler)
     writer.variable('ar', self.archiver)
     writer.variable('link', self.linker)
@@ -121,6 +138,8 @@ class ClangToolchain(toolchain.Toolchain):
       self.build_windows_toolchain()
     elif self.target.is_android():
       self.build_android_toolchain()
+    elif self.target.is_macosx() or self.target.is_ios():
+      self.build_xcode_toolchain()
     if self.toolchain != '' and not self.toolchain.endswith('/') and not self.toolchain.endswith('\\'):
       self.toolchain += os.sep
 
@@ -144,6 +163,40 @@ class ClangToolchain(toolchain.Toolchain):
     self.oslibs += ['log']
 
     self.toolchain = os.path.join('$ndk', 'toolchains', 'llvm', 'prebuilt', self.android.hostarchname, 'bin', '')
+
+  def build_xcode_toolchain(self):
+    if self.target.is_macosx():
+      sdk = 'macosx'
+      deploytarget = 'MACOSX_DEPLOYMENT_TARGET=' + self.deploymenttarget
+      self.cflags += [ '-fasm-blocks', '-mmacosx-version-min=' + self.deploymenttarget, '-isysroot', '$sysroot' ]
+      self.arflags += [ '-static', '-no_warning_for_no_symbols' ]
+      self.linkflags += [ '-isysroot', '$sysroot' ]
+    elif self.target.is_ios():
+      sdk = 'iphoneos'
+      deploytarget = 'IPHONEOS_DEPLOYMENT_TARGET=' + self.deploymenttarget
+      self.cflags += [ '-fasm-blocks', '-miphoneos-version-min=' + self.deploymenttarget, '-isysroot', '$sysroot' ]
+      self.arflags += [ '-static', '-no_warning_for_no_symbols' ]
+      self.linkflags += [ '-isysroot', '$sysroot' ]
+
+    platformpath = subprocess.check_output( [ 'xcrun', '--sdk', sdk, '--show-sdk-platform-path' ] ).strip()
+    localpath = platformpath + "/Developer/usr/bin:/Applications/Xcode.app/Contents/Developer/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    if self.target.is_macosx():
+      self.sysroot = subprocess.check_output( [ 'xcrun', '--sdk', 'macosx', '--show-sdk-path' ] ).strip()
+    elif self.target.is_ios():
+      self.sysroot = subprocess.check_output( [ 'xcrun', '--sdk', 'iphoneos', '--show-sdk-path' ] ).strip()
+
+    self.ccompiler = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'clang' ] ).strip()
+    self.archiver = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'libtool' ] ).strip()
+    self.linker = deploytarget + " " + self.ccompiler
+    self.lipo = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'lipo' ] ).strip()
+    self.dsymutil = "PATH=" + localpath + " " + subprocess.check_output( [ 'xcrun', '--sdk', sdk, '-f', 'dsymutil' ] ).strip()
+
+    self.mflags += self.cflags + [ '-fobjc-arc', '-fno-objc-exceptions', '-x', 'objective-c' ]
+    self.cflags += [ '-x', 'c' ]
+
+    self.cmcmd = '$cc -MMD -MT $out -MF $out.d $includepaths $moreincludepaths $mflags $carchflags $cconfigflags -c $in -o $out'
+    self.arcmd = self.rmcmd('$out') + ' && $ar $ararchflags $arflags $in -o $out'
 
   def make_includepaths(self, includepaths):
     if not includepaths is None:

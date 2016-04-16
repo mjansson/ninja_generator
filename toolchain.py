@@ -84,6 +84,10 @@ class Toolchain(object):
     self.depend_includepaths = []
     self.depend_libpaths = []
 
+    #Target helpers
+    self.android = None
+    self.xcode = None
+
     #Command wrappers
     if host.is_windows():
       self.rmcmd = lambda p: 'cmd /C (IF exist ' + p + ' (del /F /Q ' + p + '))'
