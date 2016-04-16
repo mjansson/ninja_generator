@@ -338,7 +338,7 @@ class Toolchain(object):
             infile = os.path.join(basepath, module, name)
             outfile = os.path.join(modulepath, os.path.splitext(name)[0] + make_pathhash(infile, nodetype) + self.objext)
           objs += self.compile_file(writer, config, arch, nodetype, infile, outfile, sourcevariables)
-        #Build arch node (per-config and per-arch binary)
+        #Build arch node (per-config-and-arch binary)
         archoutpath = os.path.join(modulepath, binfile)
         archnodes += self.compile_node(writer, nodetype, config, arch, objs, archoutpath, nodevariables)
       #Build final config node (per-config binary)

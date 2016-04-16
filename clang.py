@@ -70,11 +70,17 @@ class ClangToolchain(toolchain.Toolchain):
     #Builders
     self.builders['c'] = self.builder_cc
     self.builders['lib'] = self.builder_lib
-    self.builders['multilib'] = self.builder_multicopy
     self.builders['sharedlib'] = self.builder_sharedlib
-    self.builders['multisharedlib'] = self.builder_multicopy
     self.builders['bin'] = self.builder_bin
-    self.builders['multibin'] = self.builder_multicopy
+    if self.target.is_macosx() or self.target.is_ios():
+      self.builders['m'] = self.builder_cm
+      self.builders['multilib'] = self.builder_multilib
+      self.builders['multisharedlib'] = self.builder_multisharedlib
+      self.builders['multibin'] = self.builder_multibin
+    else:
+      self.builders['multilib'] = self.builder_multicopy
+      self.builders['multisharedlib'] = self.builder_multicopy
+      self.builders['multibin'] = self.builder_multicopy
 
     #Setup target platform
     self.build_toolchain()
@@ -106,9 +112,13 @@ class ClangToolchain(toolchain.Toolchain):
     writer.variable('cc', self.ccompiler)
     writer.variable('ar', self.archiver)
     writer.variable('link', self.linker)
+    if self.target.is_macosx() or self.target.is_ios():
+      writer.variable('lipo', self.lipo)
     writer.variable('includepaths', self.make_includepaths(self.includepaths))
     writer.variable('moreincludepaths', '')
     writer.variable('cflags', self.cflags)
+    if self.target.is_macosx() or self.target.is_ios():
+      writer.variable('mflags', self.mflags)
     writer.variable('carchflags', '')
     writer.variable('cconfigflags', '')
     writer.variable('arflags', self.arflags)
@@ -127,6 +137,9 @@ class ClangToolchain(toolchain.Toolchain):
   def write_rules(self, writer):
     super(ClangToolchain, self).write_rules(writer)
     writer.rule('cc', command = self.cccmd, depfile = self.ccdepfile, deps = self.ccdeps, description = 'CC $in')
+    if self.target.is_macosx() or self.target.is_ios():
+      writer.rule('cm', command = self.cmcmd, depfile = self.ccdepfile, deps = self.ccdeps, description = 'CM $in')
+      writer.rule( 'lipo', command = self.lipocmd, description = 'LIPO $out' )
     writer.rule('ar', command = self.arcmd, description = 'LIB $out')
     writer.rule('link', command = self.linkcmd, description = 'LINK $out')
     writer.rule('so', command = self.linkcmd, description = 'SO $out')
@@ -195,8 +208,14 @@ class ClangToolchain(toolchain.Toolchain):
     self.mflags += self.cflags + [ '-fobjc-arc', '-fno-objc-exceptions', '-x', 'objective-c' ]
     self.cflags += [ '-x', 'c' ]
 
-    self.cmcmd = '$cc -MMD -MT $out -MF $out.d $includepaths $moreincludepaths $mflags $carchflags $cconfigflags -c $in -o $out'
+    self.cmcmd = self.cccmd.replace('$cflags', '$mflags')
     self.arcmd = self.rmcmd('$out') + ' && $ar $ararchflags $arflags $in -o $out'
+    self.lipocmd = '$lipo $in -create -output $out'
+
+    if self.target.is_macosx():
+      self.linkflags += [ '-framework', 'Cocoa', '-framework', 'CoreFoundation' ]
+    if self.target.is_ios():
+      self.linkflags += [ '-framework', 'CoreGraphics', '-framework', 'UIKit', '-framework', 'Foundation' ]
 
   def make_includepaths(self, includepaths):
     if not includepaths is None:
@@ -299,11 +318,9 @@ class ClangToolchain(toolchain.Toolchain):
     return []
 
   def make_configlibpaths(self, config, arch):
-    libpaths = [
-      self.libpath,
-      os.path.join(self.libpath, config),
-      os.path.join(self.libpath, config, arch)
-      ]
+    libpaths = [self.libpath, os.path.join(self.libpath, config)]
+    if not self.target.is_macosx() and not self.target.is_ios():
+      libpaths += [os.path.join(self.libpath, config, arch)]
     libpaths += [os.path.join(libpath, self.libpath) for libpath in self.depend_libpaths]
     libpaths += [os.path.join(libpath, self.libpath, config) for libpath in self.depend_libpaths]
     libpaths += [os.path.join(libpath, self.libpath, config, arch) for libpath in self.depend_libpaths]
@@ -360,6 +377,9 @@ class ClangToolchain(toolchain.Toolchain):
   def builder_cc(self, writer, config, arch, targettype, infile, outfile, variables):
     return writer.build(outfile, 'cc', infile, implicit = self.implicit_deps(config, variables), variables = self.cc_variables(config, arch, targettype, variables))
 
+  def builder_cm(self, writer, config, arch, targettype, infile, outfile, variables):
+    return writer.build(outfile, 'cm', infile, implicit = self.implicit_deps(config, variables), variables = self.cc_variables(config, arch, targettype, variables))
+
   def builder_lib(self, writer, config, arch, targettype, infiles, outfile, variables):
     return writer.build(outfile, 'ar', infiles, implicit = self.implicit_deps(config, variables), variables = self.ar_variables(config, arch, targettype, variables))
 
@@ -368,6 +388,21 @@ class ClangToolchain(toolchain.Toolchain):
 
   def builder_bin(self, writer, config, arch, targettype, infiles, outfile, variables):
     return writer.build(outfile, 'link', infiles, implicit = self.implicit_deps(config, variables), variables = self.link_variables(config, arch, targettype, variables))
+
+  #Universal targets
+  def builder_multilib(self, writer, config, arch, targettype, infiles, outfile, variables):
+    localvariables = [('arflags', '-static -no_warning_for_no_symbols')]
+    if variables != None:
+      localvariables = variables + localvariables
+    libfile = os.path.split(infiles[0])[1]
+    return writer.build(os.path.join(outfile, libfile), 'ar', infiles, variables = localvariables);
+
+  def builder_multisharedlib(self, writer, config, arch, targettype, infiles, outfile, variables):
+    return writer.build(outfile, 'so', infiles, implicit = self.implicit_deps(config, variables), variables = self.link_variables(config, arch, targettype, variables))
+
+  def builder_multibin(self, writer, config, arch, targettype, infiles, outfile, variables):
+    binfile = os.path.split(infiles[0])[1]
+    return writer.build(os.path.join(outfile, binfile), 'lipo', infiles, variables = variables)
 
 def create(host, target, toolchain):
   return ClangToolchain(host, target, toolchain)
