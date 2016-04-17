@@ -391,10 +391,10 @@ class Toolchain(object):
     if configs is None:
       configs = list(self.configs)
     for config in configs:
-      archbins = self.bin(writer, module, sources, binname, basepath, [config], includepaths, implicit_deps, libs, frameworks, outpath = '$buildpath')
+      archbins = self.bin(writer, module, sources, binname, basepath, [config], includepaths, implicit_deps, libs, frameworks, '$buildpath')
       if self.target.is_macosx() or self.target.is_ios():
         binpath = os.path.join( self.binpath, config, binname + '.app' )
-        builtbin += self.xcode.apk(self, writer, module, archbins, javasources, self.binpath, binname, basepath, config, None, resources, codesign)
+        builtbin += self.xcode.apk(self, writer, module, archbins, self.binpath, binname, basepath, config, None, resources, True)
       if self.target.is_android():
         javasources = [name for name in sources if name.endswith('.java')]
         builtbin += self.android.apk(self, writer, module, archbins, javasources, self.binpath, binname, basepath, config, None, resources)

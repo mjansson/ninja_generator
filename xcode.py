@@ -82,7 +82,106 @@ class XCode(object):
     pass
 
   def write_rules(self, writer):
-    pass
+    writer.rule( 'dsymutil', command = self.dsymutilcmd, description = 'DSYMUTIL $outpath' )
+    writer.rule( 'plist', command = self.plistcmd, description = 'PLIST $outpath' )
+    writer.rule( 'xcassets', command = self.xcassetscmd, description = 'XCASSETS $outpath' )
+    writer.rule( 'xib', command = self.xibcmd, description = 'XIB $outpath' )
+    writer.rule( 'codesign', command = self.codesigncmd, description = 'CODESIGN $outpath' )
 
-  def app(self, toolchain, writer, module, archbins, javasources, outpath, binname, basepath, config, implicit_deps, resources, codesign):
-    pass
+  def apk(self, toolchain, writer, module, archbins, outpath, binname, basepath, config, implicit_deps, resources, codesign):
+    #Outputs
+    builtbin = []
+    builtres = []
+    builtsym = []
+
+    #Paths
+    builddir = os.path.join('$buildpath', config, 'app', binname)
+    dsympath = binpath + '.dSYM'
+
+    #Extract debug symbols from universal binary
+    dsymcontentpath = os.path.join( dsympath, 'Contents' )
+    builtsym = writer.build( [ os.path.join( dsymcontentpath, 'Resources', 'DWARF', binname ), os.path.join( dsymcontentpath, 'Resources', 'DWARF' ), os.path.join( dsymcontentpath, 'Resources' ), os.path.join( dsymcontentpath, 'Info.plist' ), dsymcontentpath, dsympath ], 'dsymutil', unibinary, variables = [ ( 'outpath', dsympath ) ] )
+
+    #Copy final universal binary
+    if self.target.is_ios():
+      builtbin = self.build_copy( writer, os.path.join( binpath, self.binprefix + binname + self.binext ), unibinary )
+    else:
+      builtbin = self.build_copy( writer, os.path.join( binpath, 'Contents', 'MacOS', self.binprefix + binname + self.binext ), unibinary, os.path.join( binpath, 'Contents' ), 'MacOS' )
+
+    #Build resources
+    if resources:
+      has_resources = False
+
+      #Lists of input plists and partial plist files produced by resources
+      plists = []
+      assetsplists = []
+      xibplists = []
+
+      #All resource output files
+      outfiles = []
+
+      #First build everything except plist inputs
+      for resource in resources:
+        if resource.endswith( '.xcassets' ):
+          if self.target.is_macosx():
+            assetsvars = [ ( 'outpath', os.path.join( binpath, 'Contents', 'Resources' ) ) ]
+          else:
+            assetsvars = [ ( 'outpath', binpath ) ]
+          outplist = os.path.join( builddir, os.path.splitext( os.path.basename( resource ) )[0] + '-xcassets.plist' )
+          assetsvars += [ ( 'outplist', outplist ) ]
+          outfiles = [ outplist ]
+          if self.target.is_macosx():
+            outfiles += [ os.path.join( binpath, 'Contents', 'Resources', 'AppIcon.icns' ) ]
+          elif self.target.is_ios():
+            pass #TODO: Need to list all icon and launch image files here
+          assetsplists += writer.build( outfiles, 'xcassets', os.path.join( basepath, module, resource ), variables = assetsvars )
+          has_resources = True
+        elif resource.endswith( '.xib' ):
+          xibmodule = binname.replace( '-', '_' ).replace( '.', '_' )
+          if self.target.is_macosx():
+            nibpath = os.path.join( binpath, 'Contents', 'Resources', os.path.splitext( os.path.basename( resource ) )[0] + '.nib' )
+          else:
+            nibpath = os.path.join( binpath, os.path.splitext( os.path.basename( resource ) )[0] + '.nib' )
+          plistpath = os.path.join( builddir, os.path.splitext( os.path.basename( resource ) )[0] + '-xib.plist' )
+          xibplists += [ plistpath ]
+          outfiles = []
+          if self.target.is_ios():
+            outfiles += [ os.path.join( nibpath, 'objects.nib' ), os.path.join( nibpath, 'objects-8.0+.nib' ), os.path.join( nibpath, 'runtime.nib' ) ]
+          outfiles += [ nibpath, plistpath ]
+          builtres += writer.build( outfiles, 'xib', os.path.join( basepath, module, resource ), variables = [ ( 'outpath', nibpath ), ( 'outplist', plistpath ), ( 'module', xibmodule ) ] )
+          has_resources = True
+        elif resource.endswith( '.plist' ):
+          plists += [ os.path.join( basepath, module, resource ) ]
+
+      #Extra output files/directories
+      outfiles = []
+      if has_resources and self.target.is_macosx():
+        outfiles += [ os.path.join( binpath, 'Contents', 'Resources' ) ]
+
+      #Now build input plists appending partial plists created by previous resources
+      if self.target.is_macosx():
+        plistpath = os.path.join( binpath, 'Contents', 'Info.plist' )
+        pkginfopath = os.path.join( binpath, 'Contents', 'PkgInfo' )
+      else:
+        plistpath = os.path.join( binpath, 'Info.plist' )
+        pkginfopath = os.path.join( binpath, 'PkgInfo' )
+      plistvars = [ ( 'exename', binname ), ( 'prodname', binname ), ( 'outpath', plistpath ) ]
+      bundleidentifier = self.make_bundleidentifier( binname )
+      if bundleidentifier != '':
+        plistvars += [ ( 'bundleidentifier', bundleidentifier ) ]
+      outfiles += [ plistpath, pkginfopath ]
+      builtres += writer.build( outfiles, 'plist', plists + assetsplists + xibplists, implicit = [ os.path.join( 'build', 'ninja', 'plist.py' ) ], variables = plistvars )
+
+    #Do code signing (might modify binary, but does not matter, nothing should have final binary as input anyway)
+    if codesign:
+      codesignvars = [ ( 'builddir', builddir ), ( 'binname', binname ), ( 'outpath', binpath ), ( 'config', config ) ]
+      if self.target.is_ios():
+        if self.ios_provisioning != '':
+          codesignvars += [ ( 'provisioning', self.ios_provisioning ) ]
+        writer.build( [ os.path.join( binpath, '_CodeSignature', 'CodeResources' ), os.path.join( binpath, '_CodeSignature' ), binpath ], 'codesign', builtbin, implicit = builtres + [ os.path.join( 'build', 'ninja', 'codesign.py' ) ], variables = codesignvars )
+      elif self.target.is_macosx():
+        if self.macosx_provisioning != '':
+          codesignvars += [ ( 'provisioning', self.macosx_provisioning ) ]
+        writer.build( [ os.path.join( binpath, 'Contents', '_CodeSignature', 'CodeResources' ), os.path.join( binpath, 'Contents', '_CodeSignature' ), os.path.join( binpath, 'Contents' ), binpath ], 'codesign', builtbin, implicit = builtres + [ os.path.join( 'build', 'ninja', 'codesign.py' ) ], variables = codesignvars )
+
+    return builtbin + builtsym + builtres
