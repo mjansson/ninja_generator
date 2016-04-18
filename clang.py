@@ -94,6 +94,8 @@ class ClangToolchain(toolchain.Toolchain):
       clangprefs = prefs['clang']
       if 'toolchain' in clangprefs:
         self.toolchain = clangprefs['toolchain']
+        if os.path.split(self.toolchain)[1] != 'bin':
+          self.toolchain = os.path.join(self.toolchain, 'bin')
       if 'archiver' in clangprefs:
         self.archiver = clangprefs['archiver']
     if self.target.is_ios() and 'ios' in prefs:
@@ -291,6 +293,11 @@ class ClangToolchain(toolchain.Toolchain):
     if self.target.is_android():
       if arch == 'arm7':
         flags += ['-Wl,--no-warn-mismatch', '-Wl,--fix-cortex-a8']
+    if self.target.is_windows():
+      if arch == 'x86':
+        flags += ['-Xlinker', '/MACHINE:X86']
+      elif arch == 'x86-64':
+        flags += ['-Xlinker', '/MACHINE:X64']
     return flags
 
   def make_linkconfigflags(self, config, targettype):

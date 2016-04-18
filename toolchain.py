@@ -123,7 +123,7 @@ class Toolchain(object):
 
   def initialize_default_archs(self):
     if self.target.is_windows():
-      self.archs = ['x86', 'x86-64']
+      self.archs = ['x86-64']
     elif self.target.is_linux() or self.target.is_bsd():
       localarch = subprocess.check_output(['uname', '-m']).strip()
       if localarch == 'x86_64' or localarch == 'amd64':

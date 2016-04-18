@@ -77,6 +77,8 @@ class GCCToolchain(toolchain.Toolchain):
       gccprefs = prefs['gcc']
       if 'toolchain' in gccprefs:
         self.toolchain = gccprefs['toolchain']
+        if os.path.split(self.toolchain)[1] != 'bin':
+          self.toolchain = os.path.join(self.toolchain, 'bin')
 
   def write_variables(self, writer):
     super(GCCToolchain, self).write_variables(writer)
