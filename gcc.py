@@ -184,12 +184,15 @@ class GCCToolchain(toolchain.Toolchain):
   def make_configlibpaths(self, config, arch):
     libpaths = [
       self.libpath,
+      os.path.join(self.libpath, arch),
       os.path.join(self.libpath, config),
       os.path.join(self.libpath, config, arch)
       ]
-    libpaths += [os.path.join(libpath, self.libpath) for libpath in self.depend_libpaths]
-    libpaths += [os.path.join(libpath, self.libpath, config) for libpath in self.depend_libpaths]
-    libpaths += [os.path.join(libpath, self.libpath, config, arch) for libpath in self.depend_libpaths]
+    if extralibpaths != None:
+      libpaths += [os.path.join(libpath, self.libpath) for libpath in extralibpaths]
+      libpaths += [os.path.join(libpath, self.libpath, arch) for libpath in extralibpaths]
+      libpaths += [os.path.join(libpath, self.libpath, config) for libpath in extralibpaths]
+      libpaths += [os.path.join(libpath, self.libpath, config, arch) for libpath in extralibpaths]
     return self.make_libpaths(libpaths)
 
   def cc_variables(self, config, arch, targettype, variables):
@@ -228,7 +231,10 @@ class GCCToolchain(toolchain.Toolchain):
       libvar = self.make_libs(variables['libs'])
       if libvar != []:
         localvariables += [('libs', libvar)]
-    localvariables += [('configlibpaths', self.make_configlibpaths(config, arch))]
+    libpaths = []
+    if 'libpaths' in variables:
+      libpaths = variables['libpaths']
+    localvariables += [('configlibpaths', self.make_configlibpaths(config, arch, libpaths))]
     return localvariables
 
   def builder_cc(self, writer, config, arch, targettype, infile, outfile, variables):
