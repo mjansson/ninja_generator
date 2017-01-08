@@ -34,9 +34,6 @@ class MSVCToolchain(toolchain.Toolchain):
     self.linkflags = ['/DEBUG']
     self.oslibs = ['kernel32', 'user32', 'shell32', 'advapi32']
 
-    if self.is_monolithic():
-      self.cflags += ['/D', '"BUILD_MONOLITHIC=1"']
-
     self.initialize_archs(archs)
     self.initialize_configs(configs)
     self.initialize_project(project)
@@ -45,6 +42,9 @@ class MSVCToolchain(toolchain.Toolchain):
 
     self.parse_default_variables(variables)
     self.read_build_prefs()
+
+    if self.is_monolithic():
+      self.cflags += ['/D', '"BUILD_MONOLITHIC=1"']
 
     #Overrides
     self.objext = '.obj'
@@ -156,7 +156,11 @@ class MSVCToolchain(toolchain.Toolchain):
                   if not version_path == '':
                     sdkpath = base_path
                     self.sdkversionpath = version_path
-                    include_path = os.path.join(include_path, self.sdkversionpath)
+                    versioned_include_path = os.path.join(include_path, self.sdkversionpath)
+                    if not os.path.exists(os.path.join(sdkpath, versioned_include_path)) and os.path.exists(os.path.join(sdkpath, versioned_include_path + '.0')):
+                      self.sdkversionpath = self.sdkversionpath + '.0'
+                      versioned_include_path = os.path.join(include_path, self.sdkversionpath)
+                    include_path = versioned_include_path
           except subprocess.CalledProcessError as e:
             continue
           if not sdkpath == '':
