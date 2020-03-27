@@ -43,6 +43,12 @@ class Generator(object):
     parser.add_argument('--subninja', action='store',
                         help = 'Build as subproject (exclude rules and pools) with the given subpath',
                         default = '')
+    parser.add_argument('--buildprefs', action='store',
+                        help = 'Read the given build preferences file',
+                        default = '')
+    parser.add_argument('--updatebuild', action='store_true',
+                        help = 'Update submodule build scripts',
+                        default = '')
     options = parser.parse_args()
 
     self.project = project
@@ -74,7 +80,7 @@ class Generator(object):
     configure_env = dict((key, os.environ[key]) for key in os.environ if key in env_keys)
     if configure_env:
       config_str = ' '.join([key + '=' + pipes.quote(configure_env[key]) for key in configure_env])
-      writer.variable('configure_env', config_str + '$ ')
+      self.writer.variable('configure_env', config_str + '$ ')
 
     if variables is None:
       variables = {}
@@ -89,6 +95,7 @@ class Generator(object):
       variables['internal_deps'] = True
 
     self.toolchain = toolchain.make_toolchain(self.host, self.target, options.toolchain)
+    self.toolchain.buildprefs = options.buildprefs
     self.toolchain.initialize(project, archs, configs, includepaths, dependlibs, libpaths, variables, self.subninja)
 
     self.writer.variable('configure_toolchain', self.toolchain.name())
