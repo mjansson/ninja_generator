@@ -22,7 +22,7 @@ class MSVCToolchain(toolchain.Toolchain):
     self.linker = 'link'
     self.dller = 'dll'
 
-    #Command definitions
+    #Command definitions (to generate assembly, add "/FAs /Fa$out.asm")
     self.cccmd = '$toolchain$cc /showIncludes /I. $includepaths $moreincludepaths $cflags $carchflags $cconfigflags $cmoreflags /c $in /Fo$out /Fd$pdbpath /FS /nologo'
     self.cxxcmd = '$toolchain$cxx /showIncludes /I. $includepaths $moreincludepaths $cxxflags $carchflags $cconfigflags $cmoreflags /c $in /Fo$out /Fd$pdbpath /FS /nologo'
     self.ccdepfile = None
@@ -31,7 +31,7 @@ class MSVCToolchain(toolchain.Toolchain):
     self.linkcmd = '$toolchain$link $libpaths $configlibpaths $linkflags $linkarchflags $linkconfigflags /DEBUG /NOLOGO /SUBSYSTEM:CONSOLE /DYNAMICBASE /NXCOMPAT /MANIFEST /MANIFESTUAC:\"level=\'asInvoker\' uiAccess=\'false\'\" /TLBID:1 /PDB:$pdbpath /OUT:$out $in $libs $archlibs $oslibs'
     self.dllcmd = self.linkcmd + ' /DLL'
 
-    self.cflags = ['/D', '"' + project.upper() + '_COMPILE=1"', '/D', '"_UNICODE"',  '/D', '"UNICODE"', '/Zi', '/Oi', '/Oy-', '/GS-', '/Gy-', '/Qpar-', '/fp:fast', '/fp:except-', '/Zc:forScope', '/Zc:wchar_t', '/GR-', '/openmp-']
+    self.cflags = ['/D', '"' + project.upper() + '_COMPILE=1"', '/D', '"_UNICODE"',  '/D', '"UNICODE"', '/std:c17', '/Zi', '/Oi', '/Oy-', '/GS-', '/Gy-', '/Qpar-', '/fp:fast', '/fp:except-', '/Zc:forScope', '/Zc:wchar_t', '/GR-', '/openmp-']
     self.cwarnflags = ['/W4', '/WX']
     self.cmoreflags = []
     self.arflags = ['/ignore:4221'] #Ignore empty object file warning]
@@ -172,6 +172,8 @@ class MSVCToolchain(toolchain.Toolchain):
               break
           if not self.toolchain == '':
             break
+    if self.toolchain == '':
+      raise Exception("Unable to locate any installed Visual Studio toolchain")
     self.includepaths += [os.path.join(self.toolchain, 'include')]
     if self.sdkpath == '':
       versions = ['v10.0', 'v8.1']
